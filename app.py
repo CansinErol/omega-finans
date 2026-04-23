@@ -16,6 +16,15 @@ from supabase import create_client
 log = logging.getLogger("omega.panel")
 
 
+def _normalize_supabase_url(url: str) -> str:
+    """PostgREST cift /rest/v1 veya bosluk kaynakli PGRST125 onlenir."""
+    u = str(url).strip().rstrip("/")
+    for suf in ("/rest/v1", "/rest/v1/"):
+        while u.endswith(suf):
+            u = u[: -len(suf)].rstrip("/")
+    return u
+
+
 def _jwt_role_unverified(token: str) -> Optional[str]:
     parts = token.strip().split(".")
     if len(parts) != 3:
@@ -68,17 +77,28 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-URL = st.secrets["SUPABASE_URL"]
-KEY = st.secrets["SUPABASE_KEY"]
-_key_role = _jwt_role_unverified(str(KEY))
-if _key_role == "service_role":
+URL = _normalize_supabase_url(st.secrets["SUPABASE_URL"])
+KEY = str(st.secrets["SUPABASE_KEY"]).strip()
+
+if KEY.startswith("sb_secret_"):
     st.error(
-        "SUPABASE_KEY olarak service_role anahtarı kullanılamaz; yalnızca anon (public) "
-        "Supabase anahtarını secrets.toml veya Streamlit Secrets içinde kullanın."
+        "SUPABASE_KEY olarak sb_secret_ anahtarı kullanılamaz; yalnızca publishable veya "
+        "legacy anon (eyJ...) kullanın."
     )
     st.stop()
-if _key_role is not None and _key_role != "anon":
-    log.warning("SUPABASE_KEY JWT rolü beklenmedik: %s (çoğu kurulumda 'anon' olur)", _key_role)
+
+if KEY.startswith("sb_publishable_"):
+    pass
+else:
+    _key_role = _jwt_role_unverified(KEY)
+    if _key_role == "service_role":
+        st.error(
+            "SUPABASE_KEY olarak service_role anahtarı kullanılamaz; yalnızca anon (public) "
+            "Supabase anahtarını secrets.toml veya Streamlit Secrets içinde kullanın."
+        )
+        st.stop()
+    if _key_role is not None and _key_role != "anon":
+        log.warning("SUPABASE_KEY JWT rolü beklenmedik: %s (çoğu kurulumda 'anon' olur)", _key_role)
 
 supabase = create_client(URL, KEY)
 DEFAULT_VIEW_LIMIT = 200
